@@ -3,23 +3,30 @@ import re
 import pandas as pd
 import numpy as np
 import time
+import click
 
 from biopandas.pdb import PandasPdb
 from biopandas.mol2 import PandasMol2, split_multimol2
+from dotenv import load_dotenv
 
-def main():
+@click.command()
+@click.argument('config')
+def main(config):
     start_time = time.time()
+
+    env_path = config
+    load_dotenv(dotenv_path=env_path)
 
     converted_mols = {}
     pdbs = {}
-    input_list = pd.read_csv('./data/chemscore2.csv')
-    max_distance = 6.0
+    input_list = pd.read_csv(os.getenv('INPUT_LIST'))
 
-    mols2 = split_multimol2('./data/chemscore_2_solutions.mol2')
+    mols2 = split_multimol2(os.getenv('MOL2_FILE'))
 
-    for pdb in os.listdir('./data/pdbs'):
+    pdb_path = os.getenv('PDBS_FILE_FOLDER')
+    for pdb in os.listdir(pdb_path):
         name = pdb.split('_')[-1].replace('.pdb', '')
-        pdbs[name] = PandasPdb().read_pdb('./data/pdbs/{}'.format(pdb)).df
+        pdbs[name] = PandasPdb().read_pdb('{}/{}'.format(pdb_path, pdb)).df
 
     for mol2 in mols2:
         pmol = PandasMol2().read_mol2_from_list(mol2_lines=mol2[1], mol2_code=mol2[0])
@@ -28,8 +35,8 @@ def main():
     def create_atom_dimensional_position(x, y, z):
         return np.array((x, y, z))
 
-    def atom_is_close_to_atom(resiude_atom, atom, distance):
-        return np.linalg.norm(resiude_atom - atom) <= distance
+    def atom_is_close_to_atom(resiude_atom, atom):
+        return np.linalg.norm(resiude_atom - atom) <= float(os.getenv('MAX_DISTANCE'))
 
     def remove_hydrogen_atoms(df):
         return df['ATOM'][~df['ATOM']['atom_name'].str.contains('H')]
@@ -53,7 +60,7 @@ def main():
             )
 
             for point in mol_points:
-                if atom_is_close_to_atom(protein_ad, point, max_distance) and protein_tag not in matched_atoms:
+                if atom_is_close_to_atom(protein_ad, point) and protein_tag not in matched_atoms:
                     matched_atoms.append(protein_tag)
 
         return matched_atoms
@@ -69,12 +76,11 @@ def main():
 
         return [key for key in interactions if key in expected_residues]
 
-    EXPECTED_RESIDUES = ['ALA_98', 'LEU_84', 'ILE_89', 'LEU_91', 'ARG_13', 'ARG_9']
     dataframe = pd.DataFrame(columns=['molecule_name', 'pdb', 'residues', 'residues_quantity'])
 
     print('Start Molecule Analyze')
     for i, row in input_list.iterrows():
-        reactions = interate_with_expected_residues(row, EXPECTED_RESIDUES)
+        reactions = interate_with_expected_residues(row, list(os.getenv('RESIDUES').split(",")))
         dataframe = dataframe.append({
             'molecule_name': row['NAME'],
             'pdb': row['Gold.Ensemble.ID'],
@@ -84,7 +90,7 @@ def main():
 
     body = dataframe.sort_values(by=['residues_quantity'], ascending=False).to_csv(index=False)
 
-    file = open("./data/filter.csv", "w")
+    file = open(os.getenv('OUTPUT_LIST'), "w")
     file.write(body)
     file.close()
 

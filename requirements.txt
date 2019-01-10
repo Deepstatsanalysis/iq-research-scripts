@@ -3,3 +3,4 @@ pandas
 jupyter
 biopandas
 click
+python-dotenv
